@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Turn pasted JSON or logfmt logs into readable lines, filter them by level or text, and copy the result as Markdown.">
+<title>Log prettifier</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1b1b1b;
+    --muted: #6b6b6b;
+    --border: #cfcfcf;
+    --panel: #f4f4f4;
+    --error: #b3261e;
+    --warn: #8a5a00;
+    --info: #0a5bc4;
+    --debug: #6b6b6b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --fg: #e6e6e6;
+      --muted: #9a9a9a;
+      --border: #444444;
+      --panel: #1f1f1f;
+      --error: #ff8a80;
+      --warn: #f2c14e;
+      --info: #78b4ff;
+      --debug: #9a9a9a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 60rem; margin: 0 auto; padding: 1rem 16px 2rem; }
+  h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+  label { font-weight: 600; }
+  textarea, input, select, button { font: inherit; font-size: 16px; color: inherit; }
+  textarea, input[type="search"], select {
+    width: 100%;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  textarea {
+    min-height: 9rem;
+    margin-top: 0.3rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+  button {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    cursor: pointer;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem 1rem; margin: 1rem 0 0.4rem; }
+  .controls label { display: block; margin-bottom: 0.3rem; }
+  .check { display: flex; gap: 0.5rem; align-items: center; font-weight: normal; }
+  .stats { color: var(--muted); font-size: 0.9rem; margin: 0.4rem 0; }
+  .log {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .log:empty { display: none; }
+  .entry { padding: 0.25rem 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .entry:last-child { border-bottom: 0; }
+  .time, .fields, .prefix { color: var(--muted); }
+  .level { font-weight: 700; }
+  .error .level, .fatal .level { color: var(--error); }
+  .warn .level { color: var(--warn); }
+  .info .level { color: var(--info); }
+  .debug .level, .trace .level { color: var(--debug); }
+  .error, .fatal { background: color-mix(in srgb, var(--error) 8%, transparent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Log prettifier</h1>
+
+  <label for="input">Paste logs</label>
+  <textarea id="input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+    placeholder='{"time":"2026-10-27T14:02:11Z","level":"error","msg":"payment failed","order":123}'></textarea>
+  <div class="row">
+    <button type="button" id="example">Try an example</button>
+    <button type="button" id="clear">Clear</button>
+  </div>
+
+  <div class="controls">
+    <div>
+      <label for="level">Minimum level</label>
+      <select id="level">
+        <option value="">Everything</option>
+        <option value="debug">Debug and up</option>
+        <option value="info">Info and up</option>
+        <option value="warn">Warnings and errors</option>
+        <option value="error">Errors only</option>
+      </select>
+    </div>
+    <div>
+      <label for="filter">Contains</label>
+      <input type="search" id="filter" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+  </div>
+  <div class="row">
+    <label class="check"><input type="checkbox" id="fields" checked> Show extra fields</label>
+  </div>
+
+  <div class="row">
+    <button type="button" id="copy-markdown">Copy as Markdown</button>
+    <button type="button" id="copy-text">Copy text</button>
+  </div>
+  <p id="stats" class="stats" aria-live="polite"></p>
+  <div id="log" class="log"></div>
+</main>
+
+<script type="module">
+const STORAGE_KEY = 'log-prettifier:input';
+const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+const LEVEL_ALIASES = {
+  trace: 'trace', debug: 'debug', dbg: 'debug', info: 'info', information: 'info', notice: 'info',
+  warn: 'warn', warning: 'warn', error: 'error', err: 'error', critical: 'fatal', crit: 'fatal',
+  fatal: 'fatal', panic: 'fatal', emergency: 'fatal', alert: 'fatal',
+};
+// pino and bunyan use numbers.
+const NUMERIC_LEVELS = { 10: 'trace', 20: 'debug', 30: 'info', 40: 'warn', 50: 'error', 60: 'fatal' };
+const TIME_KEYS = ['time', 'timestamp', 'ts', '@timestamp', 'date', 't'];
+const LEVEL_KEYS = ['level', 'severity', 'lvl', 'levelname', 'log.level'];
+const MESSAGE_KEYS = ['msg', 'message', 'event', 'log'];
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+const LOGFMT_PAIR = /([\w.@/-]+)=("(?:[^"\\]|\\.)*"|\S*)/g;
+const LEADING_TIME = /^\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]?\s*/;
+// Lines that belong to the entry above: indented lines and stack trace headers.
+const CONTINUATION = /^(\s|Caused by\b|Traceback \(most recent call last\)|During handling of the above exception)/;
+const EXCEPTION_LINE = /^[\w.]+(Error|Exception|Exit|Interrupt|Warning)\b/;
+const PLAIN_LEVEL = /\b(TRACE|DEBUG|INFO|NOTICE|WARN(?:ING)?|ERROR|FATAL|CRITICAL|PANIC)\b|\[(trace|debug|info|notice|warn|warning|error|crit|alert|emerg)\]/;
+
+const EXAMPLE = [
+  '{"time":"2026-10-27T14:02:09.120Z","level":30,"msg":"request completed","method":"GET","path":"/health","status":200}',
+  '{"time":"2026-10-27T14:02:11.482Z","level":"error","msg":"payment failed","order_id":8812,"error":{"code":"card_declined"}}',
+  'time=2026-10-27T14:02:12Z level=warn msg="retrying upstream" attempt=2 upstream=billing',
+  '2026-10-27 14:02:13,004 ERROR worker: job crashed',
+  'Traceback (most recent call last):',
+  '  File "worker.py", line 42, in run',
+  '    process(job)',
+  'ValueError: bad payload',
+  '\x1b[32m2026-10-27T14:02:15Z INFO\x1b[0m shutdown complete',
+].join('\n');
+
+const $ = (id) => document.getElementById(id);
+
+function normalizeLevel(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') return NUMERIC_LEVELS[value] ?? null;
+  return LEVEL_ALIASES[String(value).toLowerCase()] ?? null;
+}
+
+function normalizeTime(value) {
+  if (typeof value !== 'number') return value === undefined ? null : String(value);
+  // Epoch seconds or milliseconds.
+  return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+}
+
+function take(object, keys) {
+  for (const key of keys) {
+    if (key in object) {
+      const value = object[key];
+      delete object[key];
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function fromObject(object, prefix) {
+  const fields = { ...object };
+  const time = normalizeTime(take(fields, TIME_KEYS));
+  const level = normalizeLevel(take(fields, LEVEL_KEYS));
+  const message = take(fields, MESSAGE_KEYS);
+  return {
+    prefix,
+    time,
+    level,
+    message: typeof message === 'string' ? message : message === undefined ? '' : JSON.stringify(message),
+    fields: Object.entries(fields).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]),
+  };
+}
+
+function parseJson(line) {
+  const start = line.indexOf('{');
+  if (start === -1 || !line.endsWith('}')) return null;
+  try {
+    const object = JSON.parse(line.slice(start));
+    return object && typeof object === 'object' ? fromObject(object, line.slice(0, start).trim()) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseLogfmt(line) {
+  const pairs = [...line.matchAll(LOGFMT_PAIR)];
+  if (pairs.length < 2 || pairs[0].index !== 0) return null;
+  const object = {};
+  for (const [, key, raw] of pairs) {
+    object[key] = raw.startsWith('"') ? raw.slice(1, -1).replace(/\\(.)/g, '$1') : raw;
+  }
+  return fromObject(object, '');
+}
+
+function parsePlain(line) {
+  let rest = line;
+  const timeMatch = rest.match(LEADING_TIME);
+  const time = timeMatch ? timeMatch[1] : null;
+  if (timeMatch) rest = rest.slice(timeMatch[0].length);
+  const levelMatch = rest.match(PLAIN_LEVEL);
+  const level = levelMatch ? normalizeLevel(levelMatch[1] || levelMatch[2]) : null;
+  // Drop the level word when it leads the message, since the badge shows it.
+  if (levelMatch && levelMatch.index === 0) rest = rest.slice(levelMatch[0].length).trimStart();
+  return { prefix: '', time, level, message: rest, fields: [] };
+}
+
+function parse(text) {
+  const entries = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(ANSI, '').trimEnd();
+    if (!line.trim()) continue;
+    const previous = entries.at(-1);
+    const inTraceback = previous?.extra.some((extra) => extra.startsWith('Traceback'));
+    if (previous && (CONTINUATION.test(line) || (inTraceback && EXCEPTION_LINE.test(line)))) {
+      previous.extra.push(line);
+      continue;
+    }
+    const entry = parseJson(line.trim()) || parseLogfmt(line.trim()) || parsePlain(line.trim());
+    entry.extra = [];
+    entries.push(entry);
+  }
+  return entries;
+}
+
+function toText(entry, showFields) {
+  const parts = [entry.prefix, entry.time, entry.level?.toUpperCase().padEnd(5), entry.message];
+  if (showFields) parts.push(...entry.fields.map(([key, value]) => `${key}=${value}`));
+  return [parts.filter(Boolean).join(' '), ...entry.extra].join('\n');
+}
+
+function span(className, text) {
+  const node = document.createElement('span');
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+let visible = [];
+
+function render() {
+  const text = $('input').value;
+  const minimum = $('level').value;
+  const needle = $('filter').value.trim().toLowerCase();
+  const showFields = $('fields').checked;
+
+  try {
+    localStorage.setItem(STORAGE_KEY, text);
+  } catch {
+    // Too big to keep as a draft; the page still works.
+  }
+  const params = new URLSearchParams();
+  if (minimum) params.set('level', minimum);
+  if (needle) params.set('q', $('filter').value.trim());
+  if (!showFields) params.set('fields', '0');
+  const query = params.toString();
+  history.replaceState(null, '', query ? `?${query}` : location.pathname);
+
+  const entries = parse(text);
+  visible = entries.filter((entry) => {
+    if (minimum && (!entry.level || LEVELS.indexOf(entry.level) < LEVELS.indexOf(minimum))) return false;
+    return !needle || toText(entry, true).toLowerCase().includes(needle);
+  });
+
+  const nodes = visible.map((entry) => {
+    const node = document.createElement('div');
+    node.className = `entry ${entry.level ?? ''}`;
+    if (entry.prefix) node.append(span('prefix', `${entry.prefix} `));
+    if (entry.time) node.append(span('time', `${entry.time} `));
+    if (entry.level) node.append(span('level', `${entry.level.toUpperCase().padEnd(5)} `));
+    node.append(span('message', entry.message));
+    if (showFields && entry.fields.length) {
+      node.append(span('fields', ` ${entry.fields.map(([key, value]) => `${key}=${value}`).join(' ')}`));
+    }
+    if (entry.extra.length) node.append(span('extra', `\n${entry.extra.join('\n')}`));
+    return node;
+  });
+  $('log').replaceChildren(...nodes);
+
+  const count = (level) => entries.filter((entry) => entry.level === level).length;
+  const errors = count('error') + count('fatal');
+  $('stats').textContent = entries.length
+    ? `${entries.length} entries · ${errors} error${errors === 1 ? '' : 's'} · ${count('warn')} warning${count('warn') === 1 ? '' : 's'}`
+      + (visible.length < entries.length ? ` · showing ${visible.length}` : '')
+    : '';
+}
+
+function markdown(text) {
+  // The fence must be longer than any run of backticks inside the logs.
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}text\n${text}\n${fence}`;
+}
+
+async function copy(button, text) {
+  const label = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = 'Copy failed';
+  }
+  setTimeout(() => { button.textContent = label; }, 1500);
+}
+
+const visibleText = () => visible.map((entry) => toText(entry, $('fields').checked)).join('\n');
+
+const params = new URLSearchParams(location.search);
+$('level').value = params.get('level') ?? '';
+$('filter').value = params.get('q') ?? '';
+$('fields').checked = params.get('fields') !== '0';
+try {
+  $('input').value = localStorage.getItem(STORAGE_KEY) ?? '';
+} catch {
+  // Storage blocked; start empty.
+}
+
+$('input').addEventListener('input', render);
+$('level').addEventListener('change', render);
+$('filter').addEventListener('input', render);
+$('fields').addEventListener('change', render);
+$('example').addEventListener('click', () => { $('input').value = EXAMPLE; render(); });
+$('clear').addEventListener('click', () => { $('input').value = ''; render(); $('input').focus(); });
+$('copy-markdown').addEventListener('click', (event) => copy(event.currentTarget, markdown(visibleText())));
+$('copy-text').addEventListener('click', (event) => copy(event.currentTarget, visibleText()));
+
+render();
+</script>
+</body>
+</html>
