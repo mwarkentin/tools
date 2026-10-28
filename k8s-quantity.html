@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Convert and add up Kubernetes CPU and memory quantities like 500m and 2Gi, or paste resource YAML to total it.">
+<title>Kubernetes quantities</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1b1b1b;
+    --muted: #666666;
+    --border: #cfcfcf;
+    --panel: #f4f4f4;
+    --accent: #0a5bc4;
+    --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --fg: #e6e6e6;
+      --muted: #9a9a9a;
+      --border: #444444;
+      --panel: #1f1f1f;
+      --accent: #78b4ff;
+      --error: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 1rem 16px 2rem; }
+  h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+  h2 { font-size: 1.1rem; margin: 0; }
+  label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+  textarea, button { font: inherit; font-size: 16px; color: inherit; }
+  textarea {
+    width: 100%;
+    min-height: 8.5rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+  button {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    cursor: pointer;
+  }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .note { color: var(--muted); font-size: 0.9rem; }
+  .group { border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 1rem; margin-top: 1.2rem; }
+  .group-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .total { font-size: 1.3rem; margin: 0.4rem 0 0; overflow-wrap: anywhere; }
+  .total .plain { color: var(--muted); font-size: 1rem; }
+  .items { list-style: none; padding: 0; margin: 0.6rem 0 0; font-size: 0.95rem; }
+  .items li { padding: 0.2rem 0; overflow-wrap: anywhere; }
+  .items .error { color: var(--error); }
+  .conversions { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0 1.5rem; margin-top: 0.8rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--border); }
+  td:last-child { text-align: right; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+  details { margin-top: 2rem; }
+  summary { cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kubernetes quantities</h1>
+
+  <label for="input">Quantities, one per line</label>
+  <textarea id="input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+  <p class="note">Paste <code>cpu:</code> and <code>memory:</code> lines straight from YAML to total each resource.</p>
+
+  <div id="results" aria-live="polite"></div>
+
+  <details>
+    <summary>How quantities work</summary>
+    <p><strong>CPU</strong> is in cores: <code>1</code> is one core and <code>500m</code> is half a core.
+      <strong>Memory</strong> is in bytes: <code>Ki</code>, <code>Mi</code>, <code>Gi</code> and <code>Ti</code>
+      are powers of 1024, while <code>k</code>, <code>M</code>, <code>G</code> and <code>T</code> are powers of 1000,
+      so <code>128M</code> is about <code>122Mi</code>.</p>
+    <p>A lowercase <code>m</code> always means thousandths, so <code>memory: 400m</code> is 0.4 bytes.
+      There is no uppercase <code>K</code>, and no <code>B</code> on the end.</p>
+    <p>The canonical form is how <code>kubectl get -o yaml</code> prints a quantity.</p>
+  </details>
+</main>
+
+<script type="module">
+const NANO = 10n ** 9n;
+const BINARY = ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei'];
+const DECIMAL = { n: -9, u: -6, m: -3, '': 0, k: 3, M: 6, G: 9, T: 12, P: 15, E: 18 };
+const DECIMAL_BY_EXPONENT = Object.fromEntries(Object.entries(DECIMAL).map(([suffix, exp]) => [exp, suffix]));
+const QUANTITY = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(Ki|Mi|Gi|Ti|Pi|Ei|[eE][+-]?\d+|[numkMGTPE])?$/;
+const BYTE_RESOURCES = /^(memory|storage|ephemeral-storage|hugepages-.+)$/;
+const DECIMAL_UNITS = [['m', 10n ** 6n], ['', NANO], ['k', 10n ** 12n], ['M', 10n ** 15n], ['G', 10n ** 18n], ['T', 10n ** 21n]];
+const BINARY_UNITS = [['Ki', 1024n * NANO], ['Mi', 1024n ** 2n * NANO], ['Gi', 1024n ** 3n * NANO], ['Ti', 1024n ** 4n * NANO]];
+const DEFAULT_INPUT = 'cpu: 250m\nmemory: 512Mi\ncpu: 1.5\nmemory: 1Gi';
+
+const input = document.getElementById('input');
+const results = document.getElementById('results');
+
+function hint(text) {
+  if (/^[+-]?[\d.]+\s+\S+$/.test(text)) return 'Remove the space before the suffix.';
+  if (/^[+-]?[\d.]+K$/.test(text)) return 'Use k (1000) or Ki (1024). There is no K.';
+  if (/^[+-]?[\d.]+[kKMGTPE]i?B$/.test(text)) return `Drop the B: try ${text.slice(0, -1).replace(/^([\d.]+)K/, '$1k')}.`;
+  return 'Not a Kubernetes quantity. Examples: 500m, 2, 128Mi, 1.5Gi, 1e3.';
+}
+
+// Exact value in billionths (nanos), as a BigInt. Like Kubernetes, anything
+// finer than 1n rounds up.
+function parse(text) {
+  const match = text.match(QUANTITY);
+  if (!match) throw new Error(hint(text));
+  const [, sign, number, suffix = ''] = match;
+  const [whole, fraction = ''] = number.split('.');
+  const mantissa = BigInt((whole || '0') + fraction);
+  let exponent = 9 - fraction.length;
+  let power = 0;
+  let format = 'decimal';
+  if (BINARY.includes(suffix) && suffix) {
+    power = BINARY.indexOf(suffix);
+    format = 'binary';
+  } else if (/^[eE]\d|^[eE][+-]/.test(suffix)) {
+    const value = Number(suffix.slice(1));
+    if (Math.abs(value) > 60) throw new Error('Exponent out of range.');
+    exponent += value;
+    format = 'exponent';
+  } else {
+    exponent += DECIMAL[suffix];
+  }
+  const numerator = mantissa * 1024n ** BigInt(power);
+  let nanos = numerator;
+  let rounded = false;
+  if (exponent >= 0) {
+    nanos = numerator * 10n ** BigInt(exponent);
+  } else {
+    const divisor = 10n ** BigInt(-exponent);
+    nanos = (numerator + divisor - 1n) / divisor;
+    rounded = numerator % divisor !== 0n;
+  }
+  return { nanos: sign === '-' ? -nanos : nanos, format, rounded };
+}
+
+// Mirrors Quantity.String() in k8s.io/apimachinery.
+function canonical(nanos, format) {
+  if (nanos === 0n) return '0';
+  const sign = nanos < 0n ? '-' : '';
+  const abs = nanos < 0n ? -nanos : nanos;
+  if (format === 'binary' && abs >= 1024n * NANO && abs % NANO === 0n) {
+    let value = abs / NANO;
+    let power = 0;
+    while (power < BINARY.length - 1 && value % 1024n === 0n) {
+      value /= 1024n;
+      power++;
+    }
+    return `${sign}${value}${BINARY[power]}`;
+  }
+  let exponent = 18;
+  while (exponent > -9 && abs % 10n ** BigInt(exponent + 9) !== 0n) exponent -= 3;
+  const value = abs / 10n ** BigInt(exponent + 9);
+  const suffix = format === 'exponent' ? (exponent ? `e${exponent}` : '') : DECIMAL_BY_EXPONENT[exponent];
+  return `${sign}${value}${suffix}`;
+}
+
+// nanos ÷ unit as a grouped decimal string, to at most `places` decimals.
+function divide(nanos, unit, places = 6) {
+  const sign = nanos < 0n ? '-' : '';
+  const abs = nanos < 0n ? -nanos : nanos;
+  const scale = 10n ** BigInt(places);
+  const scaled = (abs * scale + unit / 2n) / unit;
+  const exact = (abs * scale) % unit === 0n;
+  const whole = (scaled / scale).toLocaleString('en-US');
+  const fraction = (scaled % scale).toString().padStart(places, '0').replace(/0+$/, '');
+  return `${exact ? '' : '≈ '}${sign}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+function readLines(text) {
+  const entries = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*/, '').trim().replace(/^-\s*/, '');
+    if (!line) continue;
+    const [, key = '', rest] = line.match(/^(?:([\w./-]+)\s*:\s*)?(.*)$/);
+    const value = rest.trim().replace(/^(["'])(.*)\1$/, '$2');
+    // Skip YAML lines that aren't quantities, like "resources:" or "image: nginx".
+    if (key && !/^[+\-.\d]/.test(value) && !/^(cpu|memory)$/.test(key)) continue;
+    entries.push({ key, value });
+  }
+  return entries;
+}
+
+function element(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+// Rows that round to zero say nothing, so they're left out.
+function conversionTable(heading, units, nanos) {
+  const rows = units
+    .map(([suffix, unit]) => [suffix, divide(nanos, unit)])
+    .filter(([, value]) => !/^≈ -?0$/.test(value));
+  return element('table', {},
+    element('tr', {}, element('th', { colSpan: 2, textContent: heading })),
+    ...rows.map(([suffix, value]) => element('tr', {},
+      element('td', { className: 'mono', textContent: suffix || '(none)' }),
+      element('td', { className: 'mono', textContent: `${value}${suffix}` }))));
+}
+
+async function copy(button, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = 'Copy failed';
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+}
+
+function render() {
+  const text = input.value;
+  history.replaceState(null, '', text.trim() ? `?q=${encodeURIComponent(text.trim())}` : location.pathname);
+
+  const groups = new Map();
+  for (const { key, value } of readLines(text)) {
+    if (!groups.has(key)) groups.set(key, []);
+    let parsed;
+    try {
+      parsed = parse(value);
+    } catch (error) {
+      parsed = { error: error.message };
+    }
+    groups.get(key).push({ value, ...parsed });
+  }
+
+  results.replaceChildren();
+  for (const [key, items] of groups) {
+    const valid = items.filter((item) => !item.error);
+    const total = valid.reduce((sum, item) => sum + item.nanos, 0n);
+    const format = valid[0]?.format ?? 'decimal';
+    const unitWord = key === 'cpu' ? ' cores' : BYTE_RESOURCES.test(key) ? ' bytes' : '';
+    const name = key || (items.length > 1 ? 'Total' : 'Value');
+    const totalText = canonical(total, format);
+
+    const head = element('div', { className: 'group-head' }, element('h2', { textContent: name }));
+    const section = element('section', { className: 'group' }, head);
+    if (valid.length) {
+      const copyButton = element('button', { type: 'button', textContent: 'Copy' });
+      copyButton.addEventListener('click', () => copy(copyButton, totalText));
+      head.append(copyButton);
+      section.append(element('p', { className: 'total' },
+        element('code', { className: 'canonical', textContent: totalText }),
+        element('span', { className: 'plain', textContent: ` = ${divide(total, NANO, 9)}${unitWord}` })));
+    }
+
+    if (items.length > 1 || items.some((item) => item.error || item.rounded)) {
+      section.append(element('ul', { className: 'items' }, ...items.map((item) => item.error
+        ? element('li', { className: 'error' }, element('code', { textContent: item.value }), ` ${item.error}`)
+        : element('li', {},
+          element('code', { textContent: item.value }),
+          ` → ${canonical(item.nanos, item.format)}${item.rounded ? ' (rounded up to the nearest 1n)' : ''}`))));
+    }
+
+    if (valid.length) {
+      // CPU only makes sense in cores and millicores; bytes never in millis.
+      const tables = key === 'cpu'
+        ? [conversionTable('Decimal', DECIMAL_UNITS.slice(0, 2), total)]
+        : [
+          conversionTable('Decimal', BYTE_RESOURCES.test(key) ? DECIMAL_UNITS.slice(1) : DECIMAL_UNITS, total),
+          conversionTable('Binary', BINARY_UNITS, total),
+        ];
+      section.append(element('div', { className: 'conversions' }, ...tables));
+    }
+    results.append(section);
+  }
+}
+
+input.value = new URLSearchParams(location.search).get('q') ?? DEFAULT_INPUT;
+input.addEventListener('input', render);
+render();
+</script>
+</body>
+</html>
