@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Describe a cron expression in plain English and list its next runs in Toronto time, or any other time zone.">
+<title>Cron explainer</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1b1b1b;
+    --muted: #666666;
+    --border: #cfcfcf;
+    --panel: #f4f4f4;
+    --accent: #0a5bc4;
+    --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --fg: #e6e6e6;
+      --muted: #9a9a9a;
+      --border: #444444;
+      --panel: #1f1f1f;
+      --accent: #78b4ff;
+      --error: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 1rem 16px 2rem; }
+  h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+  h2 { font-size: 1.1rem; margin: 0; }
+  label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+  input, select, button { font: inherit; font-size: 16px; color: inherit; }
+  input, select {
+    width: 100%;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  #cron { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  button {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    cursor: pointer;
+  }
+  .examples { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0 1.2rem; }
+  .examples button { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; padding: 0.25rem 0.55rem; }
+  .zones { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.8rem 1rem; }
+  .description { font-size: 1.15rem; margin: 1.4rem 0 0.4rem; min-height: 1.5em; }
+  .error { color: var(--error); margin: 1.4rem 0 0.4rem; }
+  .error:empty { display: none; }
+  .runs-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+  ol { padding: 0; margin: 0.6rem 0 0; list-style: none; }
+  li { padding: 0.55rem 0; border-bottom: 1px solid var(--border); }
+  li .when { font-weight: 600; }
+  li .detail { color: var(--muted); font-size: 0.9rem; }
+  .note { color: var(--muted); font-size: 0.9rem; }
+  details { margin-top: 2rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-top: 0.6rem; }
+  th, td { text-align: left; padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--panel); border-radius: 4px; padding: 0.05em 0.3em; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/cronstrue@3.32.0/dist/cronstrue.min.js"></script>
+</head>
+<body>
+<main>
+  <h1>Cron explainer</h1>
+
+  <label for="cron">Cron expression</label>
+  <input id="cron" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="*/15 * * * *">
+  <div class="examples" aria-label="Examples">
+    <button type="button">*/15 * * * *</button>
+    <button type="button">0 9 * * 1-5</button>
+    <button type="button">30 2 * * 0</button>
+    <button type="button">0 0 1 * *</button>
+    <button type="button">@hourly</button>
+  </div>
+
+  <div class="zones">
+    <div>
+      <label for="source-tz">Schedule runs in</label>
+      <select id="source-tz"></select>
+    </div>
+    <div>
+      <label for="display-tz">Show times in</label>
+      <select id="display-tz"></select>
+    </div>
+  </div>
+  <p class="note">GitHub Actions and Kubernetes CronJobs use UTC unless the job sets a time zone. A <code>CRON_TZ=</code> prefix sets it here too.</p>
+
+  <p id="description" class="description" aria-live="polite"></p>
+  <p id="error" class="error" role="alert"></p>
+
+  <div class="runs-head">
+    <h2 id="runs-heading">Next runs</h2>
+    <button type="button" id="copy">Copy</button>
+  </div>
+  <ol id="runs"></ol>
+
+  <details>
+    <summary>Cron syntax</summary>
+    <table>
+      <tr><th>Field</th><th>Values</th></tr>
+      <tr><td>Minute</td><td><code>0-59</code></td></tr>
+      <tr><td>Hour</td><td><code>0-23</code></td></tr>
+      <tr><td>Day of month</td><td><code>1-31</code>, <code>L</code> for the last day</td></tr>
+      <tr><td>Month</td><td><code>1-12</code> or <code>JAN-DEC</code></td></tr>
+      <tr><td>Day of week</td><td><code>0-7</code> (0 and 7 are Sunday) or <code>SUN-SAT</code></td></tr>
+    </table>
+    <p class="note"><code>*</code> any value, <code>,</code> list, <code>-</code> range, <code>/</code> step.
+      A sixth field at the start adds seconds. When both day of month and day of week are set,
+      either one matching is enough, as in standard cron.</p>
+  </details>
+</main>
+
+<script type="module">
+import { Cron } from 'https://cdn.jsdelivr.net/npm/croner@10.0.1/dist/croner.js';
+
+const RUN_COUNT = 10;
+const DEFAULTS = { cron: '0 9 * * 1-5', tz: 'UTC', show: 'America/Toronto' };
+const COMMON_ZONES = [
+  'UTC', 'America/Toronto', 'America/Vancouver', 'America/Chicago', 'America/Los_Angeles',
+  'America/New_York', 'Europe/London', 'Europe/Berlin', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney',
+];
+
+const $ = (id) => document.getElementById(id);
+const cronInput = $('cron');
+const sourceSelect = $('source-tz');
+const displaySelect = $('display-tz');
+
+function fillZones(select) {
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const common = [...new Set([...COMMON_ZONES, local])];
+  const all = Intl.supportedValuesOf('timeZone').filter((zone) => !common.includes(zone));
+  for (const [label, zones] of [['Common', common], ['All time zones', all]]) {
+    const group = document.createElement('optgroup');
+    group.label = label;
+    for (const zone of zones) group.append(new Option(zone === local ? `${zone} (this device)` : zone, zone));
+    select.append(group);
+  }
+}
+
+function isZone(zone) {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function setZone(select, zone, fallback) {
+  const value = isZone(zone) ? zone : fallback;
+  if (![...select.options].some((option) => option.value === value)) select.append(new Option(value, value));
+  select.value = value;
+}
+
+// "CRON_TZ=Europe/London 0 9 * * *" → { zone: 'Europe/London', pattern: '0 9 * * *' }
+function splitTimeZone(expression) {
+  const match = expression.match(/^(?:CRON_TZ|TZ)=(\S+)\s+(.*)$/);
+  return match ? { zone: match[1], pattern: match[2] } : { zone: null, pattern: expression };
+}
+
+function formatter(timeZone, options) {
+  return new Intl.DateTimeFormat(undefined, { timeZone, ...options });
+}
+
+function relative(date, now) {
+  const seconds = (date - now) / 1000;
+  const units = [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]];
+  const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) || units.at(-1);
+  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(Math.round(seconds / size), unit);
+}
+
+let currentRuns = [];
+
+function render() {
+  const expression = cronInput.value.trim().replace(/\s+/g, ' ');
+  const { zone, pattern } = splitTimeZone(expression);
+  const sourceZone = zone || sourceSelect.value;
+  const displayZone = displaySelect.value;
+  sourceSelect.disabled = Boolean(zone);
+
+  const params = new URLSearchParams({ cron: expression, tz: sourceSelect.value, show: displayZone });
+  history.replaceState(null, '', `?${params}`);
+
+  $('error').textContent = '';
+  $('description').textContent = '';
+  $('runs').replaceChildren();
+  currentRuns = [];
+  if (!pattern) return;
+  if (!isZone(sourceZone)) {
+    $('error').textContent = `Unknown time zone: ${sourceZone}`;
+    return;
+  }
+
+  let runs;
+  try {
+    runs = new Cron(pattern, { timezone: sourceZone }).nextRuns(RUN_COUNT);
+  } catch (error) {
+    $('error').textContent = error.message;
+    return;
+  }
+
+  try {
+    const text = window.cronstrue.toString(pattern);
+    $('description').textContent = `${text} (${sourceZone})`;
+  } catch {
+    $('description').textContent = `Runs on the schedule below (${sourceZone})`;
+  }
+
+  const full = formatter(displayZone, {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  });
+  const sourceTime = formatter(sourceZone, { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const now = new Date();
+
+  $('runs-heading').textContent = runs.length ? `Next ${runs.length} runs` : 'Next runs';
+  if (!runs.length) {
+    $('error').textContent = 'This schedule never runs.';
+    return;
+  }
+  for (const run of runs) {
+    const item = document.createElement('li');
+    const when = document.createElement('div');
+    when.className = 'when';
+    when.textContent = full.format(run);
+    const detail = document.createElement('div');
+    detail.className = 'detail';
+    detail.textContent = sourceZone === displayZone
+      ? relative(run, now)
+      : `${relative(run, now)} · ${sourceTime.format(run)}`;
+    item.append(when, detail);
+    $('runs').append(item);
+    currentRuns.push(full.format(run));
+  }
+}
+
+async function copyRuns(button) {
+  const text = `${cronInput.value.trim()}\n${$('description').textContent}\n\n${currentRuns.join('\n')}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = 'Copy failed';
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+}
+
+fillZones(sourceSelect);
+fillZones(displaySelect);
+
+const params = new URLSearchParams(location.search);
+cronInput.value = params.get('cron') ?? DEFAULTS.cron;
+setZone(sourceSelect, params.get('tz'), DEFAULTS.tz);
+setZone(displaySelect, params.get('show'), DEFAULTS.show);
+
+cronInput.addEventListener('input', render);
+sourceSelect.addEventListener('change', render);
+displaySelect.addEventListener('change', render);
+document.querySelectorAll('.examples button').forEach((button) => {
+  button.addEventListener('click', () => {
+    cronInput.value = button.textContent;
+    render();
+  });
+});
+$('copy').addEventListener('click', (event) => copyRuns(event.currentTarget));
+
+render();
+</script>
+</body>
+</html>

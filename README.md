@@ -10,3 +10,7 @@ them. The code lives in
 
 <!-- recently starts -->
 <!-- recently stops -->
+
+## Infrastructure
+
+- [Cron explainer](https://tools.michaelwarkentin.com/cron-explainer): describe a cron expression in plain English and list its next runs in Toronto time, or any other time zone
