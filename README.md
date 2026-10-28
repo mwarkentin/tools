@@ -14,3 +14,4 @@ them. The code lives in
 ## Infrastructure
 
 - [Cron explainer](https://tools.michaelwarkentin.com/cron-explainer): describe a cron expression in plain English and list its next runs in Toronto time, or any other time zone
+- [Kubernetes quantities](https://tools.michaelwarkentin.com/k8s-quantity): convert and add up CPU and memory quantities like `500m` and `2Gi`
