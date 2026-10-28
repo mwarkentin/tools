@@ -28,6 +28,8 @@ from common import REPO_URL, ROOT, SITE_NAME, format_date, parse_date, render_pa
 from gather_links import URL_TRAILING_PUNCTUATION
 
 TOKEN_PATTERN = re.compile(r"(https?://\S+)|(?<![\w/&])#(\d+)\b")
+# Lines that start a new line even inside a paragraph: list items and trailers.
+LINE_START_PATTERN = re.compile(r"([-*] |\d+\. |[A-Z][\w-]*: )")
 
 EXTRA_CSS = """
 .tool { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
@@ -54,8 +56,20 @@ if (details) details.open = true;
 </script>"""
 
 
+def unwrap(message: str) -> str:
+    """Join hard-wrapped lines so paragraphs reflow on narrow screens."""
+    lines: list[str] = []
+    for line in message.split("\n"):
+        if lines and lines[-1] and line.strip() and not LINE_START_PATTERN.match(line):
+            lines[-1] += " " + line.strip()
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def format_message(message: str) -> str:
     """Escape a commit message, link its URLs and #123 references."""
+    message = unwrap(message)
     parts = []
     position = 0
     for match in TOKEN_PATTERN.finditer(message):

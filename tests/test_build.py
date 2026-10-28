@@ -33,6 +33,23 @@ def test_format_message_links_urls_and_issue_numbers():
     assert '<a href="https://example.com/a#3">https://example.com/a#3</a>.' in html
 
 
+def test_format_message_reflows_wrapped_lines():
+    message = (
+        "Add a tool that does\nsomething useful.\n\n"
+        "- first item that\n  wraps\n- second item\n\n"
+        "Co-Authored-By: Someone\nClaude-Session: https://claude.ai/code/x"
+    )
+    assert format_message(message).split("<br>\n") == [
+        "Add a tool that does something useful.",
+        "",
+        "- first item that wraps",
+        "- second item",
+        "",
+        "Co-Authored-By: Someone",
+        'Claude-Session: <a href="https://claude.ai/code/x">https://claude.ai/code/x</a>',
+    ]
+
+
 def test_inject_footer_goes_before_last_body_tag_once():
     page = "<body><pre></body></pre>\n</BODY>\n</html>"
     injected = inject_footer(page, "abc")
