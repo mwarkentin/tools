@@ -3,8 +3,9 @@
 //
 // Tools work on text people paste or type, and keep it in the URL and in
 // localStorage, so this sends as little as it can: an error's type and stack
-// trace, the page's path, the browser and the release. Never error messages,
-// query strings or fragments, breadcrumbs, IP addresses or session replays.
+// trace, the page's path, the tool's name (as a `tool` tag), the browser and
+// the release. Never error messages, query strings or fragments, breadcrumbs,
+// IP addresses or session replays.
 // tests/test_telemetry.py checks that nothing typed into a tool reaches Sentry.
 //
 // A tool with <body data-no-telemetry> doesn't get this script at all, and
@@ -22,6 +23,7 @@
 
   const release = document.currentScript?.dataset.release || undefined;
   const withoutQuery = (url) => url?.replace(/[?#].*$/, '');
+  const tool = location.pathname.split('/').pop().replace(/\.html$/, '');
 
   // Only these fields leave the page. Messages are dropped because they can
   // quote input: JSON.parse, for one, puts the start of the text it rejected
@@ -35,6 +37,7 @@
     release: event.release,
     environment: event.environment,
     sdk: event.sdk,
+    tags: { tool },
     request: { url: withoutQuery(location.href), headers: { 'User-Agent': navigator.userAgent } },
     exception: {
       values: (event.exception?.values ?? []).map(({ type, mechanism, stacktrace }) => ({

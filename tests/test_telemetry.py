@@ -126,6 +126,7 @@ def test_errors_reach_sentry_without_anything_typed(page: Page, production, sent
     ]
     for event in events:
         assert event["request"]["url"] == f"{production}/k8s-quantity"
+        assert event["tags"] == {"tool": "k8s-quantity"}
         assert event["release"].startswith("tools@")
         assert event["sdk"]["settings"]["infer_ip"] == "never"
         assert "user" not in event and "breadcrumbs" not in event

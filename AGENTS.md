@@ -88,7 +88,8 @@ network access.
   other work specifics out of tools, tests and commit messages.
 - `telemetry.js` reports errors to Sentry, but tools hold pasted and typed
   text in the page, the URL and `localStorage`, so it sends only an error's
-  type and stack trace, the page's path, the browser and the release. No
+  type and stack trace, the page's path, the tool's name (a `tool` tag, to
+  filter on), the browser and the release. No
   error messages (they can quote input), query strings, fragments,
   breadcrumbs, IP addresses or session replays. Keep it that way, and don't
   call Sentry from a tool. `telemetry.js` does nothing until `SENTRY_DSN` is
