@@ -12,7 +12,7 @@
 // so records nothing. Anything added here later has to respect that too.
 (() => {
   // The tools project's DSN. While it's empty, nothing loads and nothing is sent.
-  const SENTRY_DSN = '';
+  const SENTRY_DSN = 'https://37919376a21c2c221f065e760e6b7eb3@o1142222.ingest.us.sentry.io/4512340886355968';
   const SDK = {
     src: 'https://browser.sentry-cdn.com/11.10.0/bundle.min.js',
     integrity: 'sha384-O/8YQaGGVy/n9jIUzcOiaiJVm4t5+JMNiK/zOa0fWvlSld+FquXemEcwJxQ3x/Lr',
