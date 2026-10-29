@@ -9,7 +9,7 @@ from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import BASE_URL, extract_meta_description, tool_files
 from gather_links import extract_urls
-from publish_tools import inject_footer
+from publish_tools import inject_footer, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
@@ -56,6 +56,41 @@ def test_inject_footer_goes_before_last_body_tag_once():
     assert injected.endswith('<script type="module" src="/footer.js?v=abc"></script>\n</BODY>\n</html>')
     assert inject_footer(injected, "abc") == injected
     assert inject_footer("<p>no body tag", "abc").endswith("/footer.js?v=abc\"></script>\n")
+
+
+def test_inject_telemetry_goes_before_head_end_once():
+    page = "<html><HEAD><title>t</title></HEAD><body></head></body>"
+    injected = inject_telemetry(page, "run();\n", "tools@abc")
+    assert injected == (
+        '<html><HEAD><title>t</title><script data-telemetry data-release="tools@abc">\nrun();\n</script>\n'
+        "</HEAD><body></head></body>"
+    )
+    assert inject_telemetry(injected, "run();", "tools@abc") == injected
+    no_head = inject_telemetry("<p>no head", "run();", "")
+    assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
+
+
+def test_inject_telemetry_leaves_tools_that_opt_out_alone():
+    page = '<head></head><body class="x" data-no-telemetry><p>hi</p></body>'
+    assert inject_telemetry(page, "run();", "tools@abc") == page
+    # Only the <body> attribute counts, not the words elsewhere on the page.
+    mention = "<head></head><body><p>Add data-no-telemetry to opt out.</p></body>"
+    assert "<script data-telemetry" in inject_telemetry(mention, "run();", "tools@abc")
+
+
+# People paste logs into these, so they record nothing at all.
+NO_TELEMETRY = {"log-prettifier.html"}
+
+
+def test_tools_are_published_with_telemetry_unless_they_opt_out(site_dir):
+    for filename in tool_files():
+        text = (site_dir / filename).read_text("utf-8")
+        head, _ = text.split("</head>", 1)
+        if filename in NO_TELEMETRY:
+            assert "data-telemetry" not in text and "sentry" not in text.lower(), filename
+        else:
+            assert '<script data-telemetry data-release="tools@' in head, filename
+            assert "const SENTRY_DSN" in head, filename
 
 
 def test_build_index_fills_recent_section(monkeypatch):
