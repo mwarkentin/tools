@@ -9,6 +9,8 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
   `foo.html` is served at `/foo`.
 - `README.md`: the tool list. The build turns it into `index.html`.
 - `footer.js`: shared footer the build adds to every tool.
+- `telemetry.js`: error reporting through Sentry, which the build inlines
+  into every tool's `<head>`. See Security.
 - `python/`: single-file Python scripts, published at `/python/<name>.py`.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
@@ -22,7 +24,8 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version (`croner@10.0.1`, never `croner@10` or `croner`).
   Prefer a package's own ESM file; for a UMD-only package, use a classic
-  `<script src>` and read its global from the module.
+  `<script src>` and read its global from the module. The one other host is
+  `browser.sentry-cdn.com`, for `telemetry.js` only.
 - Phone first: usable at 375px wide with no sideways scrolling. Inputs,
   textareas and selects use `font-size: 16px` or larger so iOS doesn't zoom.
   Put a Copy button beside any output meant to be pasted elsewhere.
@@ -69,7 +72,8 @@ uncaught exceptions, failed requests, sideways scrolling, text inputs under
 pins and the README link.
 
 In a Claude Code on the web sandbox, the default network policy can block
-`cdn.jsdelivr.net` and `cdnjs.cloudflare.com`. A test failing with
+`cdn.jsdelivr.net`, `cdnjs.cloudflare.com` and `browser.sentry-cdn.com`
+(which `tests/test_telemetry.py` loads). A test failing with
 `Failed: https://cdn.jsdelivr.net/...` means the sandbox can't reach the CDN,
 not that the tool is broken. Ask for those hosts to be allowed. CI has full
 network access.
@@ -81,6 +85,17 @@ network access.
   read; never host someone else's HTML here.
 - This repo is public. Keep secrets, internal hostnames, project names and
   other work specifics out of tools, tests and commit messages.
+- `telemetry.js` reports errors to Sentry, but tools hold pasted and typed
+  text in the page, the URL and `localStorage`, so it sends only an error's
+  type and stack trace, the page's path, the browser and the release. No
+  error messages (they can quote input), query strings, fragments,
+  breadcrumbs, IP addresses or session replays. Keep it that way, and don't
+  call Sentry from a tool. `telemetry.js` does nothing until `SENTRY_DSN` is
+  set, and only runs on tools.michaelwarkentin.com. `tests/test_telemetry.py`
+  types a marker string into a tool, makes it fail several ways and fails if
+  the marker reaches Sentry. The SDK is pinned with an integrity hash; to
+  update it, change the URL and the hash
+  (`curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`).
 
 ## APIs that work from the browser
 

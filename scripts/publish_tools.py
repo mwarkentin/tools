@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Each tool is copied with a <script> tag for footer.js added before its last
-</body>. footer.js, tools.json and python/*.py are copied as they are.
-Anything not listed here (scripts, tests, Markdown) never reaches the site.
+Each tool is copied with telemetry.js inlined before its </head> and a
+<script> tag for footer.js added before its last </body>. footer.js,
+tools.json and python/*.py are copied as they are. Anything not listed here
+(scripts, tests, Markdown, telemetry.js itself) never reaches the site.
 
 Usage: publish_tools.py [SITE_DIR]
 """
@@ -12,12 +13,35 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from common import ROOT, tool_files
 
 FOOTER = "footer.js"
+TELEMETRY = "telemetry.js"
+
+
+def current_release(root: Path = ROOT) -> str:
+    """The release Sentry files errors under: tools@ and the commit being built."""
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True)
+    return f"tools@{result.stdout.strip()}" if result.returncode == 0 else ""
+
+
+def inject_telemetry(text: str, script: str, release: str) -> str:
+    """Inline the telemetry script before </head>, or at the end, once.
+
+    It's inline rather than a file so it runs before the tool's own code
+    without holding up the page for another request.
+    """
+    if "<script data-telemetry" in text:
+        return text
+    tag = f'<script data-telemetry data-release="{release}">\n{script.strip()}\n</script>\n'
+    index = text.lower().find("</head>")
+    if index == -1:
+        return f"{text.rstrip()}\n{tag}"
+    return f"{text[:index]}{tag}{text[index:]}"
 
 
 def footer_tag(version: str) -> str:
@@ -42,9 +66,13 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     version = hashlib.sha256(footer.read_bytes()).hexdigest()[:8]
     shutil.copy2(footer, site_dir / FOOTER)
 
+    telemetry = (root / TELEMETRY).read_text("utf-8")
+    release = current_release(root)
+
     published = tool_files(root)
     for filename in published:
         text = (root / filename).read_text("utf-8")
+        text = inject_telemetry(text, telemetry, release)
         (site_dir / filename).write_text(inject_footer(text, version), "utf-8")
 
     tools_json = root / "tools.json"

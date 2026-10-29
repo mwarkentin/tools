@@ -9,7 +9,7 @@ from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import BASE_URL, extract_meta_description, tool_files
 from gather_links import extract_urls
-from publish_tools import inject_footer
+from publish_tools import inject_footer, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
@@ -56,6 +56,26 @@ def test_inject_footer_goes_before_last_body_tag_once():
     assert injected.endswith('<script type="module" src="/footer.js?v=abc"></script>\n</BODY>\n</html>')
     assert inject_footer(injected, "abc") == injected
     assert inject_footer("<p>no body tag", "abc").endswith("/footer.js?v=abc\"></script>\n")
+
+
+def test_inject_telemetry_goes_before_head_end_once():
+    page = "<html><HEAD><title>t</title></HEAD><body></head></body>"
+    injected = inject_telemetry(page, "run();\n", "tools@abc")
+    assert injected == (
+        '<html><HEAD><title>t</title><script data-telemetry data-release="tools@abc">\nrun();\n</script>\n'
+        "</HEAD><body></head></body>"
+    )
+    assert inject_telemetry(injected, "run();", "tools@abc") == injected
+    no_head = inject_telemetry("<p>no head", "run();", "")
+    assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
+
+
+def test_tools_are_published_with_telemetry(site_dir):
+    for filename in tool_files():
+        text = (site_dir / filename).read_text("utf-8")
+        head, _ = text.split("</head>", 1)
+        assert '<script data-telemetry data-release="tools@' in head
+        assert "const SENTRY_DSN" in head
 
 
 def test_build_index_fills_recent_section(monkeypatch):
