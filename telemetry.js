@@ -6,6 +6,9 @@
 // trace, the page's path, the browser and the release. Never error messages,
 // query strings or fragments, breadcrumbs, IP addresses or session replays.
 // tests/test_telemetry.py checks that nothing typed into a tool reaches Sentry.
+//
+// A tool with <body data-no-telemetry> doesn't get this script at all, and
+// so records nothing. Anything added here later has to respect that too.
 (() => {
   // The tools project's DSN. While it's empty, nothing loads and nothing is sent.
   const SENTRY_DSN = '';

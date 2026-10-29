@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Each tool is copied with telemetry.js inlined before its </head> and a
-<script> tag for footer.js added before its last </body>. footer.js,
-tools.json and python/*.py are copied as they are. Anything not listed here
-(scripts, tests, Markdown, telemetry.js itself) never reaches the site.
+Each tool is copied with telemetry.js inlined before its </head>, unless it
+opts out, and a <script> tag for footer.js added before its last </body>.
+footer.js, tools.json and python/*.py are copied as they are. Anything not
+listed here (scripts, tests, Markdown, telemetry.js itself) never reaches
+the site.
 
 Usage: publish_tools.py [SITE_DIR]
 """
@@ -12,6 +13,7 @@ Usage: publish_tools.py [SITE_DIR]
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +23,8 @@ from common import ROOT, tool_files
 
 FOOTER = "footer.js"
 TELEMETRY = "telemetry.js"
+# A tool opts out of telemetry, and gets no trace of it, with <body data-no-telemetry>.
+NO_TELEMETRY = re.compile(r"<body\b[^>]*\sdata-no-telemetry\b", re.IGNORECASE)
 
 
 def current_release(root: Path = ROOT) -> str:
@@ -33,9 +37,10 @@ def inject_telemetry(text: str, script: str, release: str) -> str:
     """Inline the telemetry script before </head>, or at the end, once.
 
     It's inline rather than a file so it runs before the tool's own code
-    without holding up the page for another request.
+    without holding up the page for another request. A tool that opts out
+    is left as it is.
     """
-    if "<script data-telemetry" in text:
+    if "<script data-telemetry" in text or NO_TELEMETRY.search(text):
         return text
     tag = f'<script data-telemetry data-release="{release}">\n{script.strip()}\n</script>\n'
     index = text.lower().find("</head>")

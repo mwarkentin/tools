@@ -26,7 +26,7 @@ DSN_LINE = re.compile(r"const SENTRY_DSN = '[^']*';")
 
 
 def with_test_dsn(text: str) -> str:
-    assert DSN_LINE.search(text), "telemetry.js should set SENTRY_DSN"
+    """Point telemetry.js, on pages that have it, at the fake Sentry below."""
     return DSN_LINE.sub(f"const SENTRY_DSN = '{DSN}';", text)
 
 
@@ -87,6 +87,7 @@ def production(page: Page, site_dir: Path) -> str:
 def test_telemetry_does_nothing_on_other_hosts(page: Page, site_url, errors):
     def handle(route: Route) -> None:
         response = route.fetch()
+        assert DSN_LINE.search(response.text()), "telemetry.js should set SENTRY_DSN"
         route.fulfill(response=response, body=with_test_dsn(response.text()))
 
     page.route(f"{site_url}/k8s-quantity", handle)
@@ -99,8 +100,7 @@ def test_telemetry_does_nothing_on_other_hosts(page: Page, site_url, errors):
 
 
 def test_errors_reach_sentry_without_anything_typed(page: Page, production, sentry):
-    page.goto(f"{production}/log-prettifier?q={SECRET}#{SECRET}")
-    page.fill("#input", f'{{"level":"error","msg":"{SECRET}"}}')
+    page.goto(f"{production}/k8s-quantity?q={SECRET}#{SECRET}")
     page.wait_for_function("window.Sentry?.getClient()")
     page.route("https://api.test/**", lambda route: route.fulfill(status=200, body="{}"))
 
@@ -109,13 +109,14 @@ def test_errors_reach_sentry_without_anything_typed(page: Page, production, sent
     # tool's own code (render() calls history.replaceState on every edit).
     # The console line and the request would be breadcrumbs.
     page.add_script_tag(content="""
-      console.log('typed', document.querySelector('#input').value);
-      fetch('https://api.test/?q=' + document.querySelector('#filter').value).catch(() => {});
-      setTimeout(() => JSON.parse(document.querySelector('#filter').value));
-      setTimeout(() => Promise.reject({ input: document.querySelector('#input').value }));
-      history.replaceState = () => { throw new Error('Bad line: ' + document.querySelector('#input').value); };
+      const typed = () => document.querySelector('#input').value;
+      console.log('typed', typed());
+      fetch('https://api.test/?q=' + typed()).catch(() => {});
+      setTimeout(() => JSON.parse(typed()));
+      setTimeout(() => Promise.reject({ input: typed() }));
+      history.replaceState = () => { throw new Error('Bad line: ' + typed()); };
     """)
-    page.fill("#input", f'{{"level":"warn","msg":"{SECRET} again"}}')
+    page.fill("#input", f"{SECRET} again")
     events = sentry.wait_for(page, "event", count=3)
 
     assert SECRET not in "".join(sentry.bodies)
@@ -124,14 +125,28 @@ def test_errors_reach_sentry_without_anything_typed(page: Page, production, sent
         "Error", "SyntaxError", "UnhandledRejection",
     ]
     for event in events:
-        assert event["request"]["url"] == f"{production}/log-prettifier"
+        assert event["request"]["url"] == f"{production}/k8s-quantity"
         assert event["release"].startswith("tools@")
         assert event["sdk"]["settings"]["infer_ip"] == "never"
         assert "user" not in event and "breadcrumbs" not in event
     thrown = next(e for e in events if e["exception"]["values"][0]["type"] == "Error")
     frames = thrown["exception"]["values"][0]["stacktrace"]["frames"]
-    assert any(f["function"].endswith("render") and f["filename"] == f"{production}/log-prettifier" for f in frames)
+    assert any(f["function"].endswith("render") and f["filename"] == f"{production}/k8s-quantity" for f in frames)
     assert sentry.items("replay_event") == []
+
+
+def test_log_prettifier_records_nothing(page: Page, production, sentry):
+    requested: list[str] = []
+    page.on("request", lambda request: requested.append(request.url))
+    page.goto(f"{production}/log-prettifier?q={SECRET}", wait_until="networkidle")
+    page.fill("#input", f'{{"level":"error","msg":"{SECRET}"}}')
+    page.add_script_tag(content="setTimeout(() => { throw new Error('boom'); });")
+    page.wait_for_timeout(1000)
+
+    assert page.locator("script[data-telemetry]").count() == 0
+    assert page.evaluate("typeof window.Sentry") == "undefined"
+    assert [url for url in requested if not url.startswith(f"{production}/")] == []
+    assert sentry.bodies == []
 
 
 def test_errors_before_the_sdk_loads_are_sent_once_it_does(page: Page, production, sentry):

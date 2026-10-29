@@ -70,12 +70,27 @@ def test_inject_telemetry_goes_before_head_end_once():
     assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
 
 
-def test_tools_are_published_with_telemetry(site_dir):
+def test_inject_telemetry_leaves_tools_that_opt_out_alone():
+    page = '<head></head><body class="x" data-no-telemetry><p>hi</p></body>'
+    assert inject_telemetry(page, "run();", "tools@abc") == page
+    # Only the <body> attribute counts, not the words elsewhere on the page.
+    mention = "<head></head><body><p>Add data-no-telemetry to opt out.</p></body>"
+    assert "<script data-telemetry" in inject_telemetry(mention, "run();", "tools@abc")
+
+
+# People paste logs into these, so they record nothing at all.
+NO_TELEMETRY = {"log-prettifier.html"}
+
+
+def test_tools_are_published_with_telemetry_unless_they_opt_out(site_dir):
     for filename in tool_files():
         text = (site_dir / filename).read_text("utf-8")
         head, _ = text.split("</head>", 1)
-        assert '<script data-telemetry data-release="tools@' in head
-        assert "const SENTRY_DSN" in head
+        if filename in NO_TELEMETRY:
+            assert "data-telemetry" not in text and "sentry" not in text.lower(), filename
+        else:
+            assert '<script data-telemetry data-release="tools@' in head, filename
+            assert "const SENTRY_DSN" in head, filename
 
 
 def test_build_index_fills_recent_section(monkeypatch):

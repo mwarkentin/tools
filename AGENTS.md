@@ -42,7 +42,8 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
 - Small enough to rewrite from scratch: a few hundred lines.
 - Don't make `<body>` a flex or grid container; wrap the tool in `<main>`
   so the footer lands below it. A tool can opt out of the footer with
-  `<body data-hide-footer>`.
+  `<body data-hide-footer>`, and out of all telemetry with
+  `<body data-no-telemetry>` (see Security).
 
 ## Adding or changing a tool
 
@@ -91,7 +92,12 @@ network access.
   error messages (they can quote input), query strings, fragments,
   breadcrumbs, IP addresses or session replays. Keep it that way, and don't
   call Sentry from a tool. `telemetry.js` does nothing until `SENTRY_DSN` is
-  set, and only runs on tools.michaelwarkentin.com. `tests/test_telemetry.py`
+  set, and only runs on tools.michaelwarkentin.com. A tool whose input could
+  be sensitive opts out with `<body data-no-telemetry>`, and the build then
+  leaves `telemetry.js` off its page entirely, so nothing on it records
+  anything. Log Prettifier does, because people paste logs into it. Anything
+  added to `telemetry.js` later, such as page-view counts, must keep that
+  true. `tests/test_telemetry.py`
   types a marker string into a tool, makes it fail several ways and fails if
   the marker reaches Sentry. The SDK is pinned with an integrity hash; to
   update it, change the URL and the hash
