@@ -129,7 +129,7 @@ the chat or agent session behind each change.</p>
 <p class="muted">{len(articles)} tool{"s" if len(articles) != 1 else ""}, most recently changed first.</p>
 {chr(10).join(articles)}
 {OPEN_FROM_HASH}"""
-    return render_page(f"Colophon · {SITE_NAME}", body, extra_css=EXTRA_CSS)
+    return render_page(f"Colophon · {SITE_NAME}", body, extra_css=EXTRA_CSS, tip_source="tools-colophon")
 
 
 def main() -> None:
