@@ -77,7 +77,7 @@ def build_index(readme: str, tools: list[dict]) -> str:
             + "\n"
             + body[end:]
         )
-    return render_page(SITE_NAME, body, extra_css=EXTRA_CSS)
+    return render_page(SITE_NAME, body, extra_css=EXTRA_CSS, tip_source="tools-home")
 
 
 def main() -> None:

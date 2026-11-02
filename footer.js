@@ -1,9 +1,21 @@
 // Shared footer, added to every tool at build time by scripts/publish_tools.py.
-// Links home, to this tool's entry in the colophon and to its source on GitHub.
+// Links home, to this tool's entry in the colophon, to its source on GitHub
+// and, once TIP_URL is set, to the tip jar.
 // A tool can opt out with <body data-hide-footer>.
 const REPO_URL = 'https://github.com/mwarkentin/tools';
+// The Stripe Payment Link for tips. While it's empty there's no tip link.
+// Keep it the same as TIP_URL in scripts/common.py.
+const TIP_URL = 'https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00';
 
 const slug = location.pathname.split('/').pop().replace(/\.html$/, '');
+
+// The tip link tells Stripe which tool it came from. client_reference_id
+// allows only letters, digits, dashes and underscores; Stripe drops anything else.
+function tipLink(source) {
+  const url = new URL(TIP_URL);
+  url.searchParams.set('client_reference_id', source.replace(/[^\w-]/g, '_'));
+  return url.href;
+}
 
 if (/^[\w.-]+$/.test(slug) && !('hideFooter' in document.body.dataset)) {
   const file = `${slug}.html`;
@@ -12,6 +24,7 @@ if (/^[\w.-]+$/.test(slug) && !('hideFooter' in document.body.dataset)) {
     ['About this tool', `/colophon#${file}`],
     ['Source', `${REPO_URL}/blob/main/${file}`],
   ];
+  if (TIP_URL) links.push(['Tip jar', tipLink(`tools-${slug}`)]);
 
   const footer = document.createElement('footer');
   footer.dataset.toolsFooter = '';

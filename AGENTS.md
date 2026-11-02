@@ -8,7 +8,12 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
 - `*.html` at the top level: one file per tool. The filename is the URL:
   `foo.html` is served at `/foo`.
 - `README.md`: the tool list. The build turns it into `index.html`.
-- `footer.js`: shared footer the build adds to every tool.
+- `footer.js`: shared footer the build adds to every tool. Once `TIP_URL`
+  holds the Stripe Payment Link, the footer and the header of the home page
+  and colophon link to it as "Tip jar", tagged with
+  `client_reference_id=tools-<slug>` so each payment shows which page it
+  came from. Set it in both `footer.js` and `scripts/common.py`; a test
+  checks they match.
 - `telemetry.js`: error reporting through Sentry, which the build inlines
   into every tool's `<head>`. See Security.
 - `python/`: single-file Python scripts, published at `/python/<name>.py`.
