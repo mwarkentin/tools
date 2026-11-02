@@ -14,7 +14,7 @@ REPO_URL = "https://github.com/mwarkentin/tools"
 ROOT = Path(__file__).resolve().parent.parent
 # The Stripe Payment Link for tips. While it's empty, pages have no tip link.
 # Keep it the same as TIP_URL in footer.js.
-TIP_URL = ""
+TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 
 # Pages the build generates. A tool can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}

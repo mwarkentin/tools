@@ -5,7 +5,7 @@
 const REPO_URL = 'https://github.com/mwarkentin/tools';
 // The Stripe Payment Link for tips. While it's empty there's no tip link.
 // Keep it the same as TIP_URL in scripts/common.py.
-const TIP_URL = '';
+const TIP_URL = 'https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00';
 
 const slug = location.pathname.split('/').pop().replace(/\.html$/, '');
 

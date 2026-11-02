@@ -34,7 +34,8 @@ def test_tip_link_tags_the_source(monkeypatch):
     assert tip_link("tools").endswith("?prefilled_promo_code=x&client_reference_id=tools")
 
 
-def test_header_has_no_tip_link_without_url():
+def test_header_has_no_tip_link_without_url(monkeypatch):
+    monkeypatch.setattr(common, "TIP_URL", "")
     assert "Tip jar" not in render_page("Title", "<p>body</p>")
 
 
@@ -46,7 +47,16 @@ def test_home_and_colophon_link_the_tip_jar_once_url_is_set(monkeypatch):
     assert f'<a href="{FAKE_TIP_URL}?client_reference_id=tools-colophon">Tip jar</a></nav>' in colophon
 
 
+def serve_footer_with_tip_url(page: Page, tip_url: str) -> None:
+    patched = FOOTER_TIP_URL.sub(f"const TIP_URL = '{tip_url}';", footer_source())
+    page.route(
+        "**/footer.js*",
+        lambda route: route.fulfill(body=patched, content_type="text/javascript"),
+    )
+
+
 def test_footer_has_no_tip_link_without_url(page: Page, site_url):
+    serve_footer_with_tip_url(page, "")
     page.goto(f"{site_url}/k8s-quantity")
     footer = page.locator("footer[data-tools-footer]")
     expect(footer).to_be_visible()
@@ -54,11 +64,7 @@ def test_footer_has_no_tip_link_without_url(page: Page, site_url):
 
 
 def test_footer_tip_link_names_the_tool(page: Page, site_url, errors):
-    patched = FOOTER_TIP_URL.sub(f"const TIP_URL = '{FAKE_TIP_URL}';", footer_source())
-    page.route(
-        "**/footer.js*",
-        lambda route: route.fulfill(body=patched, content_type="text/javascript"),
-    )
+    serve_footer_with_tip_url(page, FAKE_TIP_URL)
     page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/k8s-quantity")
 
