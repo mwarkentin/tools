@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import build_index
 from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
-from common import BASE_URL, extract_meta_description, tool_files
+from common import BASE_URL, GENERATED_PAGES, extract_meta_description, inject_analytics, tool_files
 from gather_links import extract_urls
 from publish_tools import inject_footer, inject_telemetry
 
@@ -82,15 +82,36 @@ def test_inject_telemetry_leaves_tools_that_opt_out_alone():
 NO_TELEMETRY = {"log-prettifier.html"}
 
 
-def test_tools_are_published_with_telemetry_unless_they_opt_out(site_dir):
+def test_inject_analytics_leaves_tools_that_opt_out_alone():
+    page = '<head></head><body data-no-telemetry><p>hi</p></body>'
+    assert inject_analytics(inject_telemetry(page, "run();", "tools@abc")) == page
+    # The inlined scripts mention <body data-no-telemetry> in their comments,
+    # which mustn't count as the page opting out.
+    page = "<head></head><body><p>hi</p></body>"
+    both = inject_analytics(inject_telemetry(page, "// <body data-no-telemetry>", "tools@abc"))
+    assert "<script data-telemetry" in both and "<script data-analytics>" in both
+
+
+def test_tools_are_published_with_telemetry_and_analytics_unless_they_opt_out(site_dir):
     for filename in tool_files():
         text = (site_dir / filename).read_text("utf-8")
         head, _ = text.split("</head>", 1)
         if filename in NO_TELEMETRY:
             assert "data-telemetry" not in text and "sentry" not in text.lower(), filename
+            assert "data-analytics" not in text and "counterscale" not in text.lower(), filename
         else:
             assert '<script data-telemetry data-release="tools@' in head, filename
             assert "const SENTRY_DSN" in head, filename
+            assert head.count("<script data-analytics>") == 1, filename
+            assert "const COUNTERSCALE_URL" in head, filename
+
+
+def test_generated_pages_get_analytics_but_not_telemetry(site_dir):
+    for filename in GENERATED_PAGES:
+        page = (site_dir / filename).read_text("utf-8")
+        assert page.count("<script data-analytics>") == 1
+        assert page.index("<script data-analytics>") < page.index("</head>")
+        assert "<script data-telemetry" not in page
 
 
 def test_build_index_fills_recent_section(monkeypatch):

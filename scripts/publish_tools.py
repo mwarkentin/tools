@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Each tool is copied with telemetry.js inlined before its </head>, unless it
-opts out, and a <script> tag for footer.js added before its last </body>.
-footer.js, tools.json and python/*.py are copied as they are. Anything not
-listed here (scripts, tests, Markdown, telemetry.js itself) never reaches
-the site.
+Each tool is copied with telemetry.js (Sentry) and analytics.js
+(Counterscale) inlined before its </head>, unless it opts out, and a
+<script> tag for footer.js added before its last </body>. footer.js,
+tools.json and python/*.py are copied as they are. Anything not listed here
+(scripts, tests, Markdown, the two scripts' own files) never reaches the
+site.
 
 Usage: publish_tools.py [SITE_DIR]
 """
@@ -13,18 +14,15 @@ Usage: publish_tools.py [SITE_DIR]
 from __future__ import annotations
 
 import hashlib
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from common import ROOT, tool_files
+from common import ROOT, inject_analytics, inline_script, tool_files
 
 FOOTER = "footer.js"
 TELEMETRY = "telemetry.js"
-# A tool opts out of telemetry, and gets no trace of it, with <body data-no-telemetry>.
-NO_TELEMETRY = re.compile(r"<body\b[^>]*\sdata-no-telemetry\b", re.IGNORECASE)
 
 
 def current_release(root: Path = ROOT) -> str:
@@ -40,13 +38,7 @@ def inject_telemetry(text: str, script: str, release: str) -> str:
     without holding up the page for another request. A tool that opts out
     is left as it is.
     """
-    if "<script data-telemetry" in text or NO_TELEMETRY.search(text):
-        return text
-    tag = f'<script data-telemetry data-release="{release}">\n{script.strip()}\n</script>\n'
-    index = text.lower().find("</head>")
-    if index == -1:
-        return f"{text.rstrip()}\n{tag}"
-    return f"{text[:index]}{tag}{text[index:]}"
+    return inline_script(text, "data-telemetry", script, f' data-release="{release}"')
 
 
 def footer_tag(version: str) -> str:
@@ -77,7 +69,7 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     published = tool_files(root)
     for filename in published:
         text = (root / filename).read_text("utf-8")
-        text = inject_telemetry(text, telemetry, release)
+        text = inject_analytics(inject_telemetry(text, telemetry, release), root)
         (site_dir / filename).write_text(inject_footer(text, version), "utf-8")
 
     tools_json = root / "tools.json"

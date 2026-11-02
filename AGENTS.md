@@ -16,6 +16,9 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
   checks they match.
 - `telemetry.js`: error reporting through Sentry, which the build inlines
   into every tool's `<head>`. See Security.
+- `analytics.js`: page views through Counterscale, which the build inlines
+  into every page's `<head>`, the home page and colophon included. See
+  Security.
 - `python/`: single-file Python scripts, published at `/python/<name>.py`.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
@@ -29,8 +32,9 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version (`croner@10.0.1`, never `croner@10` or `croner`).
   Prefer a package's own ESM file; for a UMD-only package, use a classic
-  `<script src>` and read its global from the module. The one other host is
-  `browser.sentry-cdn.com`, for `telemetry.js` only.
+  `<script src>` and read its global from the module. The only other hosts
+  are `browser.sentry-cdn.com`, for `telemetry.js`, and Counterscale's own
+  address, for `analytics.js`.
 - Phone first: usable at 375px wide with no sideways scrolling. Inputs,
   textareas and selects use `font-size: 16px` or larger so iOS doesn't zoom.
   Put a Copy button beside any output meant to be pasted elsewhere.
@@ -47,7 +51,7 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
 - Small enough to rewrite from scratch: a few hundred lines.
 - Don't make `<body>` a flex or grid container; wrap the tool in `<main>`
   so the footer lands below it. A tool can opt out of the footer with
-  `<body data-hide-footer>`, and out of all telemetry with
+  `<body data-hide-footer>`, and out of all telemetry and analytics with
   `<body data-no-telemetry>` (see Security).
 
 ## Adding or changing a tool
@@ -100,14 +104,29 @@ network access.
   call Sentry from a tool. `telemetry.js` does nothing until `SENTRY_DSN` is
   set, and only runs on tools.michaelwarkentin.com. A tool whose input could
   be sensitive opts out with `<body data-no-telemetry>`, and the build then
-  leaves `telemetry.js` off its page entirely, so nothing on it records
-  anything. Log Prettifier does, because people paste logs into it. Anything
-  added to `telemetry.js` later, such as page-view counts, must keep that
-  true. `tests/test_telemetry.py`
-  types a marker string into a tool, makes it fail several ways and fails if
-  the marker reaches Sentry. The SDK is pinned with an integrity hash; to
-  update it, change the URL and the hash
+  leaves `telemetry.js` and `analytics.js` off its page entirely, so nothing
+  on it records anything. Log Prettifier does, because people paste logs
+  into it. Anything added to either script later must keep that true.
+  `tests/test_telemetry.py` types a marker string into a tool, makes it fail
+  several ways and fails if the marker reaches Sentry. The SDK is pinned
+  with an integrity hash; to update it, change the URL and the hash
   (`curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`).
+- `analytics.js` counts page views with
+  [Counterscale](https://counterscale.dev), which runs on our Cloudflare
+  account (installed with its own CLI, not from this repo). It does nothing
+  until `COUNTERSCALE_URL` is set, and only runs on
+  tools.michaelwarkentin.com. Each page view sends the page's path, never
+  its query string or fragment, and the other site a visitor came from as
+  its origin only; moves within the site have no referrer. Counterscale adds
+  the browser and device from the user agent and the country from the IP
+  address, which it doesn't keep, and sets no cookies. The tracker's own
+  defaults would read a referrer and UTM tags from the query string, where
+  tools keep their input, and watch `history.pushState`, so keep passing it
+  `url`, `referrer` and `autoTrackPageviews: false`. It loads from jsDelivr
+  with an integrity hash: update the version and hash together (the same
+  command), and keep it on the version the Counterscale install runs.
+  `tests/test_analytics.py` types a marker into a tool and fails if it
+  reaches Counterscale.
 
 ## APIs that work from the browser
 
