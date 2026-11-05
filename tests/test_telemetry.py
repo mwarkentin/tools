@@ -25,8 +25,14 @@ SECRET = "hunter2-do-not-send"
 DSN_LINE = re.compile(r"const SENTRY_DSN = '[^']*';")
 
 
+COUNTERSCALE_LINE = re.compile(r"const COUNTERSCALE_URL = '[^']*';")
+
+
 def with_test_dsn(text: str) -> str:
-    """Point telemetry.js, on pages that have it, at the fake Sentry below."""
+    """Point telemetry.js, on pages that have it, at the fake Sentry below,
+    and switch analytics.js off so these tests never count a page view on
+    the real Counterscale."""
+    text = COUNTERSCALE_LINE.sub("const COUNTERSCALE_URL = '';", text)
     return DSN_LINE.sub(f"const SENTRY_DSN = '{DSN}';", text)
 
 

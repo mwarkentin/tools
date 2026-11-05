@@ -13,7 +13,7 @@
 (() => {
   // Counterscale's address, as the installer printed it. While it's empty,
   // nothing loads and nothing is sent.
-  const COUNTERSCALE_URL = '';
+  const COUNTERSCALE_URL = 'https://counterscale.mwarkentin.workers.dev';
   const SITE_ID = 'tools';
   // Counterscale's own tracker, checked against this hash before it runs.
   const TRACKER = {
