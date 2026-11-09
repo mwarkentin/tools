@@ -11,9 +11,10 @@
 // A tool with <body data-no-telemetry> doesn't get this script either, and
 // so records nothing at all.
 (() => {
-  // Counterscale's address, as the installer printed it. While it's empty,
-  // nothing loads and nothing is sent.
-  const COUNTERSCALE_URL = 'https://counterscale.mwarkentin.workers.dev';
+  // Counterscale's address: its custom domain, made by OpenTofu in
+  // mwarkentin/infra (worker_domains.tf). While it's empty, nothing loads
+  // and nothing is sent.
+  const COUNTERSCALE_URL = 'https://stats.michaelwarkentin.com';
   const SITE_ID = 'tools';
   // Counterscale's own tracker, checked against this hash before it runs.
   const TRACKER = {
