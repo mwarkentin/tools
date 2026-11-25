@@ -4,7 +4,7 @@
 Each tool is copied with telemetry.js (Sentry) and analytics.js
 (Counterscale) inlined before its </head>, unless it opts out, and a
 <script> tag for footer.js added before its last </body>. footer.js,
-tools.json and python/*.py are copied as they are. Anything not listed here
+tools.json, python/*.py and macos/*.swift and *.sh are copied as they are. Anything not listed here
 (scripts, tests, Markdown, the two scripts' own files) never reaches the
 site.
 
@@ -76,11 +76,12 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     if tools_json.exists():
         shutil.copy2(tools_json, site_dir / "tools.json")
 
-    scripts = sorted((root / "python").glob("*.py"))
-    if scripts:
-        (site_dir / "python").mkdir(exist_ok=True)
-        for script in scripts:
-            shutil.copy2(script, site_dir / "python" / script.name)
+    for folder, patterns in (("python", ("*.py",)), ("macos", ("*.swift", "*.sh"))):
+        files = sorted(path for pattern in patterns for path in (root / folder).glob(pattern))
+        if files:
+            (site_dir / folder).mkdir(exist_ok=True)
+            for path in files:
+                shutil.copy2(path, site_dir / folder / path.name)
 
     return published
 

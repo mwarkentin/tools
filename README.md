@@ -19,3 +19,7 @@ them. The code lives in
 ## Text and logs
 
 - [Log prettifier](https://tools.michaelwarkentin.com/log-prettifier): turn pasted JSON or logfmt logs into readable lines, filter them by level, and copy the result as Markdown
+
+## macOS
+
+- [clipfix](https://github.com/mwarkentin/tools/blob/main/macos/clipfix.swift): background helper that adds a PNG to the clipboard when an app copies an image as TIFF only (Monosnap does), so pastes arrive as `.png` instead of a large `.tiff`. Install with `curl -fsSL https://tools.michaelwarkentin.com/macos/install-clipfix.sh | bash`

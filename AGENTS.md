@@ -20,6 +20,8 @@ small single-file HTML tools, published by GitHub Pages on every push to `main`.
   into every page's `<head>`, the home page and colophon included. See
   Security.
 - `python/`: single-file Python scripts, published at `/python/<name>.py`.
+- `macos/`: small macOS utilities, as Swift source plus an install script,
+  published at `/macos/<name>`. See macOS utilities.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
   `tools.json`, so don't create those by hand.
@@ -162,3 +164,14 @@ options and httpx for HTTP:
 # ]
 # ///
 ```
+
+## macOS utilities
+
+Each utility in `macos/` is a single Swift file built with
+`swiftc -O -swift-version 5` (no Xcode project, no packages) and an
+`install-<name>.sh` beside it that builds it and, if it runs in the
+background, installs a LaunchAgent. The installer works from a checkout and
+straight from its URL (`curl -fsSL .../macos/install-<name>.sh | bash`),
+downloading the Swift file when it isn't next to it, and takes `uninstall`.
+CI runs on Linux, so `tests/` can only check the installers, with `swiftc`
+and `launchctl` stubbed out; build the Swift on a Mac before committing.

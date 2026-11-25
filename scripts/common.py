@@ -142,6 +142,7 @@ code {
   border-radius: 4px;
   padding: 0.1em 0.35em;
   font-size: 0.9em;
+  overflow-wrap: anywhere;
 }
 li { margin: 0.3rem 0; }
 .muted { color: var(--muted); }

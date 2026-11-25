@@ -155,7 +155,9 @@ def test_site_contains_only_publishable_files(site_dir):
     published = {path.relative_to(site_dir).as_posix() for path in site_dir.rglob("*") if path.is_file()}
     expected = {*tool_files(), "index.html", "colophon.html", "footer.js", "tools.json", "sitemap.xml", "robots.txt"}
     assert expected <= published
-    leftovers = {name for name in published - expected if not name.startswith("python/")}
+    leftovers = {
+        name for name in published - expected if not name.startswith(("python/", "macos/"))
+    }
     assert leftovers == set(), "unexpected files would be deployed"
 
 
